@@ -17,7 +17,10 @@
   },
   "author": "Speechify",
   "type": "module",
-  "repository": "git@github.com:Speechify-AI/livekit-plugin-js.git",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Speechify-AI/livekit-plugin-js.git"
+  },
   "license": "Apache-2.0",
   "files": [
     "dist",
