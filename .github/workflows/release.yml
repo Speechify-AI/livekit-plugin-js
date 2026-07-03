@@ -30,12 +30,12 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10
+      # Node 24.9 bundles npm 11.6, which satisfies trusted publishing's
+      # npm >= 11.5.1 requirement without a separate global npm install.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.9.0
           registry-url: https://registry.npmjs.org
-      # Trusted publishing (OIDC) requires npm >= 11.5.1
-      - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
