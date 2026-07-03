@@ -4,8 +4,8 @@
 
 import { Plugin } from '@livekit/agents';
 
-// export * from './tts.js';
-// export * from './models.js';
+export * from './models.js';
+export * from './tts.js';
 
 class SpeechifyPlugin extends Plugin {
   constructor() {

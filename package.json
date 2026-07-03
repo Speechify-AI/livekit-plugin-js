@@ -31,13 +31,18 @@
     "clean:build": "pnpm clean && pnpm build",
     "lint": "eslint -f unix \"src/**/*.{ts,js}\""
   },
+  "dependencies": {
+    "@speechify/api": "^2.0.0"
+  },
   "devDependencies": {
     "@livekit/agents": "^1.2.0",
+    "@livekit/rtc-node": "^0.13.11",
     "@types/node": "^18.0.0",
     "tsup": "^8.3.5",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
-    "@livekit/agents": "^1.2.0"
+    "@livekit/agents": "^1.2.0",
+    "@livekit/rtc-node": "^0.13.11"
   }
 }
