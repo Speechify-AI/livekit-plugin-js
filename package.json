@@ -1,0 +1,43 @@
+{
+  "name": "@speechify/livekit-plugin",
+  "version": "0.1.0",
+  "description": "Speechify plugin for LiveKit Agents for Node.js",
+  "main": "dist/index.js",
+  "require": "dist/index.cjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    "import": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "require": {
+      "types": "./dist/index.d.cts",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "author": "Speechify",
+  "type": "module",
+  "repository": "git@github.com:Speechify-AI/livekit-plugin-js.git",
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup --onSuccess \"pnpm build:types\"",
+    "build:types": "tsc --declaration --emitDeclarationOnly",
+    "clean": "rm -rf dist",
+    "clean:build": "pnpm clean && pnpm build",
+    "lint": "eslint -f unix \"src/**/*.{ts,js}\""
+  },
+  "devDependencies": {
+    "@livekit/agents": "^1.2.0",
+    "@types/node": "^18.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@livekit/agents": "^1.2.0"
+  }
+}
