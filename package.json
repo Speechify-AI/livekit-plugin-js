@@ -22,14 +22,16 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup --onSuccess \"pnpm build:types\"",
     "build:types": "tsc --declaration --emitDeclarationOnly",
     "clean": "rm -rf dist",
     "clean:build": "pnpm clean && pnpm build",
-    "lint": "eslint -f unix \"src/**/*.{ts,js}\""
+    "lint": "eslint -f unix \"src/**/*.{ts,js}\"",
+    "test": "vitest run"
   },
   "dependencies": {
     "@speechify/api": "^2.0.0"
@@ -39,7 +41,8 @@
     "@livekit/rtc-node": "^0.13.11",
     "@types/node": "^18.0.0",
     "tsup": "^8.3.5",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^2.1.0"
   },
   "peerDependencies": {
     "@livekit/agents": "^1.2.0",
