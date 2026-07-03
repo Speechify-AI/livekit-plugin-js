@@ -17,6 +17,18 @@
   },
   "author": "Speechify",
   "type": "module",
+  "keywords": [
+    "livekit",
+    "livekit-agents",
+    "tts",
+    "text-to-speech",
+    "speechify",
+    "voice-ai"
+  ],
+  "homepage": "https://github.com/Speechify-AI/livekit-plugin-js#readme",
+  "bugs": {
+    "url": "https://github.com/Speechify-AI/livekit-plugin-js/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/Speechify-AI/livekit-plugin-js.git"
