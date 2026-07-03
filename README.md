@@ -2,6 +2,8 @@
 
 Speechify text-to-speech for [LiveKit Agents](https://docs.livekit.io/agents/) on Node.js. Built on the official [`@speechify/api`](https://www.npmjs.com/package/@speechify/api) SDK.
 
+Streaming with word-level timestamps: `stream()` splits input into sentences and issues one `/audio/speech` request per sentence, emitting audio and aligned word timestamps as each sentence completes — near-streaming time-to-first-audio plus word marks (`streaming` and `alignedTranscript` capabilities).
+
 ## Installation
 
 ```bash
@@ -41,14 +43,14 @@ const session = new AgentSession({
 | Option | Default | Description |
 | --- | --- | --- |
 | `voiceId` | `'jack'` | Voice to synthesize with (see the Speechify `/v1/voices` endpoint). |
-| `encoding` | `'ogg_24000'` | `<format>_<rate>`. One of `mp3_24000`, `ogg_24000`, `aac_24000`, `pcm_24000`. |
 | `model` | provider default | `simba-english`, `simba-multilingual`, or `simba-3.0`. |
 | `language` | provider default | BCP-47 code of the input, e.g. `en-US`. |
 | `loudnessNormalization` | provider default | Normalize output loudness. |
 | `textNormalization` | provider default | Expand numbers/dates into words before synthesis. |
+| `tokenizer` | basic sentence tokenizer | Sentence tokenizer used to chunk input in `stream()`. |
 | `apiKey` | `$SPEECHIFY_API_KEY` | Speechify API key. |
 | `baseUrl` | SDK default | Override the API base URL. |
 | `client` | — | Pass a preconfigured `SpeechifyClient` from `@speechify/api`. |
 
-`pcm_24000` returns raw 16-bit little-endian PCM (24 kHz mono) for the lowest-latency path with no decoding.
+Audio is raw 16-bit little-endian PCM at 24 kHz mono. `simba-3.0` is recommended for the lowest time-to-first-audio.
 

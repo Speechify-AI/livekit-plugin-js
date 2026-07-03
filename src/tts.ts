@@ -7,26 +7,22 @@ import {
   APIStatusError,
   type APIConnectOptions,
   AudioByteStream,
+  USERDATA_TIMED_TRANSCRIPT,
+  createTimedString,
   shortuuid,
+  tokenize,
   tts,
 } from '@livekit/agents';
 import { Speechify, SpeechifyClient, SpeechifyError } from '@speechify/api';
-import type { TTSEncoding, TTSModels } from './models.js';
+import type { TTSModels } from './models.js';
 
 const NUM_CHANNELS = 1;
+const SAMPLE_RATE = 24000;
+const AUDIO_FORMAT: Speechify.GetSpeechRequest.AudioFormat = 'pcm';
 const DEFAULT_VOICE_ID = 'jack';
-const DEFAULT_ENCODING: TTSEncoding = 'ogg_24000';
-
-const ACCEPT_BY_FORMAT: Record<string, Speechify.StreamAudioRequestAccept> = {
-  mp3: 'audio/mpeg',
-  ogg: 'audio/ogg',
-  aac: 'audio/aac',
-  pcm: 'audio/pcm',
-};
 
 export interface TTSOptions {
   voiceId: string;
-  encoding: TTSEncoding;
   model?: TTSModels;
   language?: string;
   loudnessNormalization?: boolean;
@@ -34,21 +30,42 @@ export interface TTSOptions {
   apiKey?: string;
   baseUrl?: string;
   client?: SpeechifyClient;
+  tokenizer?: tokenize.SentenceTokenizer;
 }
 
-const formatFromEncoding = (encoding: TTSEncoding): string => encoding.split('_', 1)[0]!;
-const sampleRateFromEncoding = (encoding: TTSEncoding): number =>
-  parseInt(encoding.split('_')[1]!, 10);
-
-const defaultOptions = (): Omit<TTSOptions, 'client'> => ({
+const defaultOptions = (): Omit<TTSOptions, 'client' | 'tokenizer'> => ({
   voiceId: DEFAULT_VOICE_ID,
-  encoding: DEFAULT_ENCODING,
 });
+
+const buildSpeechRequest = (text: string, opts: TTSOptions): Speechify.GetSpeechRequest => {
+  const request: Speechify.GetSpeechRequest = {
+    audio_format: AUDIO_FORMAT,
+    input: text,
+    voice_id: opts.voiceId,
+  };
+  if (opts.model) request.model = opts.model;
+  if (opts.language) request.language = opts.language;
+  if (opts.loudnessNormalization !== undefined || opts.textNormalization !== undefined) {
+    request.options = {
+      loudness_normalization: opts.loudnessNormalization,
+      text_normalization: opts.textNormalization,
+    };
+  }
+  return request;
+};
+
+const toError = (e: unknown): Error => {
+  if (e instanceof SpeechifyError) {
+    return new APIStatusError({ message: e.message, options: { statusCode: e.statusCode ?? -1 } });
+  }
+  return new APIConnectionError({ message: e instanceof Error ? e.message : String(e) });
+};
 
 export class TTS extends tts.TTS {
   label = 'speechify.TTS';
   #opts: TTSOptions;
   #client: SpeechifyClient;
+  #tokenizer: tokenize.SentenceTokenizer;
 
   /**
    * Create a new instance of Speechify TTS.
@@ -57,14 +74,19 @@ export class TTS extends tts.TTS {
    * `apiKey` must be set, either via the constructor or the `SPEECHIFY_API_KEY`
    * environment variable. Pass a preconfigured `client` to reuse an existing
    * `SpeechifyClient` (in which case `apiKey`/`baseUrl` are ignored).
+   *
+   * Synthesis uses the Speechify `/audio/speech` endpoint, which returns raw PCM
+   * (24 kHz mono) plus word-level speech marks. `stream()` chunks input into
+   * sentences and issues one request per sentence, emitting audio and aligned
+   * word timestamps as each sentence completes.
    */
   constructor(opts: Partial<TTSOptions> = {}) {
     const merged = { ...defaultOptions(), ...opts };
-    const sampleRate = sampleRateFromEncoding(merged.encoding);
 
-    super(sampleRate, NUM_CHANNELS, { streaming: false });
+    super(SAMPLE_RATE, NUM_CHANNELS, { streaming: true, alignedTranscript: true });
 
     this.#opts = merged;
+    this.#tokenizer = merged.tokenizer ?? new tokenize.basic.SentenceTokenizer();
 
     if (merged.client) {
       this.#client = merged.client;
@@ -95,7 +117,11 @@ export class TTS extends tts.TTS {
     return this.#opts;
   }
 
-  updateOptions(opts: Partial<Omit<TTSOptions, 'client' | 'apiKey' | 'baseUrl' | 'encoding'>>) {
+  get tokenizer(): tokenize.SentenceTokenizer {
+    return this.#tokenizer;
+  }
+
+  updateOptions(opts: Partial<Omit<TTSOptions, 'client' | 'apiKey' | 'baseUrl' | 'tokenizer'>>) {
     this.#opts = { ...this.#opts, ...opts };
   }
 
@@ -103,10 +129,29 @@ export class TTS extends tts.TTS {
     return new ChunkedStream(this, text, this.#opts, connOptions);
   }
 
-  stream(): tts.SynthesizeStream {
-    throw new Error('streaming is not supported by Speechify TTS, use synthesize() instead');
+  stream(options?: { connOptions?: APIConnectOptions }): tts.SynthesizeStream {
+    return new SynthesizeStream(this, this.#opts, options?.connOptions);
   }
 }
+
+const timedStringsFromMarks = (
+  marks: Speechify.SpeechMarks | undefined,
+  offsetSeconds: number,
+): ReturnType<typeof createTimedString>[] => {
+  if (!marks?.chunks) return [];
+  const out: ReturnType<typeof createTimedString>[] = [];
+  for (const chunk of marks.chunks) {
+    if (!chunk.value || chunk.start_time === undefined) continue;
+    out.push(
+      createTimedString({
+        text: chunk.value,
+        startTime: chunk.start_time / 1000 + offsetSeconds,
+        endTime: chunk.end_time !== undefined ? chunk.end_time / 1000 + offsetSeconds : undefined,
+      }),
+    );
+  }
+  return out;
+};
 
 export class ChunkedStream extends tts.ChunkedStream {
   label = 'speechify.ChunkedStream';
@@ -124,61 +169,111 @@ export class ChunkedStream extends tts.ChunkedStream {
 
   protected async run() {
     const requestId = shortuuid();
-    const opts = this.#opts;
-    const sampleRate = sampleRateFromEncoding(opts.encoding);
-    const bstream = new AudioByteStream(sampleRate, NUM_CHANNELS);
+    const bstream = new AudioByteStream(SAMPLE_RATE, NUM_CHANNELS);
 
-    const request: Speechify.GetStreamRequest = {
-      Accept: ACCEPT_BY_FORMAT[formatFromEncoding(opts.encoding)]!,
-      input: this.inputText,
-      voice_id: opts.voiceId,
-    };
-    if (opts.model) request.model = opts.model;
-    if (opts.language) request.language = opts.language;
-    if (opts.loudnessNormalization !== undefined || opts.textNormalization !== undefined) {
-      request.options = {
-        loudness_normalization: opts.loudnessNormalization,
-        text_normalization: opts.textNormalization,
+    try {
+      const response = await this.#tts.client.audio.speech(
+        buildSpeechRequest(this.inputText, this.#opts),
+        { abortSignal: this.abortSignal, timeoutInSeconds: this.#timeoutInSeconds },
+      );
+
+      const audio = Buffer.from(response.audio_data, 'base64');
+      const timed = timedStringsFromMarks(response.speech_marks, 0);
+      let attached = false;
+
+      const putFrames = (frames: ReturnType<AudioByteStream['write']>) => {
+        for (const frame of frames) {
+          if (!attached && timed.length > 0) {
+            frame.userdata[USERDATA_TIMED_TRANSCRIPT] = timed;
+            attached = true;
+          }
+          this.queue.put({ requestId, frame, final: false, segmentId: requestId });
+        }
       };
-    }
 
-    const pushFrames = (chunk: Uint8Array, final: boolean) => {
-      const frames = final ? bstream.flush() : bstream.write(chunk);
-      for (const frame of frames) {
-        this.queue.put({ requestId, frame, final: false, segmentId: requestId });
+      putFrames(bstream.write(audio));
+      putFrames(bstream.flush());
+      this.queue.close();
+    } catch (e) {
+      if (!this.queue.closed) this.queue.close();
+      if (this.abortSignal.aborted) return;
+      throw toError(e);
+    }
+  }
+}
+
+export class SynthesizeStream extends tts.SynthesizeStream {
+  label = 'speechify.SynthesizeStream';
+  #opts: TTSOptions;
+  #tts: TTS;
+
+  constructor(ttsInstance: TTS, opts: TTSOptions, connOptions?: APIConnectOptions) {
+    super(ttsInstance, connOptions);
+    this.#tts = ttsInstance;
+    this.#opts = opts;
+  }
+
+  protected async run() {
+    const sentenceStream = this.#tts.tokenizer.stream();
+    let cumulativeDuration = 0;
+
+    const forwardInput = async () => {
+      for await (const input of this.input) {
+        if (this.abortController.signal.aborted) break;
+        if (input === SynthesizeStream.FLUSH_SENTINEL) {
+          sentenceStream.flush();
+        } else {
+          sentenceStream.pushText(input);
+        }
       }
+      sentenceStream.endInput();
+      sentenceStream.close();
+    };
+
+    const synthesizeSentence = async (text: string) => {
+      const requestId = shortuuid();
+      const bstream = new AudioByteStream(SAMPLE_RATE, NUM_CHANNELS);
+
+      const response = await this.#tts.client.audio.speech(
+        buildSpeechRequest(text, this.#opts),
+        { abortSignal: this.abortSignal, timeoutInSeconds: this.connOptions.timeoutMs / 1000 },
+      );
+
+      const audio = Buffer.from(response.audio_data, 'base64');
+      const timed = timedStringsFromMarks(response.speech_marks, cumulativeDuration);
+      let attached = false;
+
+      const putFrames = (frames: ReturnType<AudioByteStream['write']>) => {
+        for (const frame of frames) {
+          if (!attached && timed.length > 0) {
+            frame.userdata[USERDATA_TIMED_TRANSCRIPT] = timed;
+            attached = true;
+          }
+          cumulativeDuration += frame.samplesPerChannel / frame.sampleRate;
+          this.queue.put({ requestId, frame, final: false, segmentId: requestId });
+        }
+      };
+
+      putFrames(bstream.write(audio));
+      putFrames(bstream.flush());
+    };
+
+    const consume = async () => {
+      for await (const ev of sentenceStream) {
+        if (this.abortController.signal.aborted) break;
+        const text = ev.token.trim();
+        if (!text) continue;
+        await synthesizeSentence(text);
+      }
+      this.queue.put(SynthesizeStream.END_OF_STREAM);
     };
 
     try {
-      const response = await this.#tts.client.audio.stream(request, {
-        abortSignal: this.abortSignal,
-        timeoutInSeconds: this.#timeoutInSeconds,
-      });
-
-      const readable = response.stream();
-      if (readable) {
-        for await (const chunk of readable) {
-          pushFrames(chunk as Uint8Array, false);
-        }
-      } else {
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        pushFrames(bytes, false);
-      }
-      pushFrames(new Uint8Array(0), true);
-      this.queue.close();
+      await Promise.all([forwardInput(), consume()]);
     } catch (e) {
-      if (this.abortSignal.aborted) {
-        if (!this.queue.closed) this.queue.close();
-        return;
-      }
       if (!this.queue.closed) this.queue.close();
-      if (e instanceof SpeechifyError) {
-        throw new APIStatusError({
-          message: e.message,
-          options: { statusCode: e.statusCode ?? -1 },
-        });
-      }
-      throw new APIConnectionError({ message: e instanceof Error ? e.message : String(e) });
+      if (this.abortSignal.aborted) return;
+      throw toError(e);
     }
   }
 }
