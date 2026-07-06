@@ -1,11 +1,10 @@
 // SPDX-FileCopyrightText: 2025 Speechify, Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
-
 import {
+  type APIConnectOptions,
   APIConnectionError,
   APIStatusError,
-  type APIConnectOptions,
   AudioByteStream,
   USERDATA_TIMED_TRANSCRIPT,
   createTimedString,
@@ -13,13 +12,16 @@ import {
   tokenize,
   tts,
 } from '@livekit/agents';
-import { Speechify, SpeechifyClient, SpeechifyError } from '@speechify/api';
+import type { AudioFrame } from '@livekit/rtc-node';
+import type { Speechify } from '@speechify/api';
+import { SpeechifyClient, SpeechifyError } from '@speechify/api';
 import type { TTSModels } from './models.js';
 
 const NUM_CHANNELS = 1;
 const SAMPLE_RATE = 24000;
 const AUDIO_FORMAT: Speechify.GetSpeechRequest.AudioFormat = 'pcm';
-const DEFAULT_VOICE_ID = 'jack';
+const DEFAULT_VOICE_ID = 'dominic_32';
+const DEFAULT_MODEL: TTSModels = 'simba-3.2';
 
 export interface TTSOptions {
   voiceId: string;
@@ -35,6 +37,7 @@ export interface TTSOptions {
 
 const defaultOptions = (): Omit<TTSOptions, 'client' | 'tokenizer'> => ({
   voiceId: DEFAULT_VOICE_ID,
+  model: DEFAULT_MODEL,
 });
 
 const buildSpeechRequest = (text: string, opts: TTSOptions): Speechify.GetSpeechRequest => {
@@ -43,7 +46,9 @@ const buildSpeechRequest = (text: string, opts: TTSOptions): Speechify.GetSpeech
     input: text,
     voice_id: opts.voiceId,
   };
-  if (opts.model) request.model = opts.model;
+  // The SDK's Model union can lag newly released models; TTSModels is the
+  // plugin's source of truth and the API accepts the value.
+  if (opts.model) request.model = opts.model as Speechify.GetSpeechRequest.Model;
   if (opts.language) request.language = opts.language;
   if (opts.loudnessNormalization !== undefined || opts.textNormalization !== undefined) {
     request.options = {
@@ -79,6 +84,9 @@ export class TTS extends tts.TTS {
    * (24 kHz mono) plus word-level speech marks. `stream()` chunks input into
    * sentences and issues one request per sentence, emitting audio and aligned
    * word timestamps as each sentence completes.
+   *
+   * Defaults to the `dominic_32` voice and the `simba-3.2` model. The voice must
+   * support the chosen model; see the `/v1/voices` endpoint.
    */
   constructor(opts: Partial<TTSOptions> = {}) {
     const merged = { ...defaultOptions(), ...opts };
@@ -234,28 +242,35 @@ export class SynthesizeStream extends tts.SynthesizeStream {
       const requestId = shortuuid();
       const bstream = new AudioByteStream(SAMPLE_RATE, NUM_CHANNELS);
 
-      const response = await this.#tts.client.audio.speech(
-        buildSpeechRequest(text, this.#opts),
-        { abortSignal: this.abortSignal, timeoutInSeconds: this.connOptions.timeoutMs / 1000 },
-      );
+      const response = await this.#tts.client.audio.speech(buildSpeechRequest(text, this.#opts), {
+        abortSignal: this.abortSignal,
+        timeoutInSeconds: this.connOptions.timeoutMs / 1000,
+      });
 
       const audio = Buffer.from(response.audio_data, 'base64');
       const timed = timedStringsFromMarks(response.speech_marks, cumulativeDuration);
       let attached = false;
 
-      const putFrames = (frames: ReturnType<AudioByteStream['write']>) => {
-        for (const frame of frames) {
-          if (!attached && timed.length > 0) {
-            frame.userdata[USERDATA_TIMED_TRANSCRIPT] = timed;
-            attached = true;
-          }
-          cumulativeDuration += frame.samplesPerChannel / frame.sampleRate;
-          this.queue.put({ requestId, frame, final: false, segmentId: requestId });
+      // Defer emitting each frame by one so the last frame of this segment can
+      // be flagged final: true, which the base class needs to emit per-segment
+      // metrics (matches the elevenlabs/cartesia plugins).
+      let lastFrame: AudioFrame | undefined;
+      const sendFrame = (final: boolean) => {
+        if (!lastFrame) return;
+        if (!attached && timed.length > 0) {
+          lastFrame.userdata[USERDATA_TIMED_TRANSCRIPT] = timed;
+          attached = true;
         }
+        cumulativeDuration += lastFrame.samplesPerChannel / lastFrame.sampleRate;
+        this.queue.put({ requestId, frame: lastFrame, final, segmentId: requestId });
+        lastFrame = undefined;
       };
 
-      putFrames(bstream.write(audio));
-      putFrames(bstream.flush());
+      for (const frame of [...bstream.write(audio), ...bstream.flush()]) {
+        sendFrame(false);
+        lastFrame = frame;
+      }
+      sendFrame(true);
     };
 
     const consume = async () => {
