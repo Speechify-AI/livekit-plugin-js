@@ -1,17 +1,19 @@
-# Speechify plugin for LiveKit Agents for Node.js
+# Speechify plugin for LiveKit Agents (Node.js)
 
-Speechify text-to-speech for [LiveKit Agents](https://docs.livekit.io/agents/) on Node.js. Built on the official [`@speechify/api`](https://www.npmjs.com/package/@speechify/api) SDK.
+Speechify text-to-speech for [LiveKit Agents](https://docs.livekit.io/agents/) on Node.js, maintained by Speechify.
 
-Streaming with word-level timestamps: `stream()` splits input into sentences and issues one `/audio/speech` request per sentence, emitting audio and aligned word timestamps as each sentence completes — near-streaming time-to-first-audio plus word marks (`streaming` and `alignedTranscript` capabilities).
+> **This repository is the maintenance source for the plugin. Distribution is handled by LiveKit.**
+>
+> The plugin ships inside the [`livekit/agents-js`](https://github.com/livekit/agents-js) monorepo and is published to npm by LiveKit as [`@livekit/agents-plugin-speechify`](https://www.npmjs.com/package/@livekit/agents-plugin-speechify). This repo mirrors that code so Speechify can maintain it, triage issues, and propose changes upstream. Bugs and contributions specific to the Speechify plugin are welcome here; releases are cut by LiveKit.
 
 ## Installation
 
 ```bash
-npm install @speechify/livekit-plugin
+npm install @livekit/agents-plugin-speechify
 # or
-pnpm add @speechify/livekit-plugin
+pnpm add @livekit/agents-plugin-speechify
 # or
-yarn add @speechify/livekit-plugin
+yarn add @livekit/agents-plugin-speechify
 ```
 
 ## Authentication
@@ -28,12 +30,12 @@ Or pass it directly with `apiKey`.
 
 ```typescript
 import { AgentSession } from '@livekit/agents';
-import * as speechify from '@speechify/livekit-plugin';
+import * as speechify from '@livekit/agents-plugin-speechify';
 
 const session = new AgentSession({
   tts: new speechify.TTS({
     voiceId: 'jack',
-    model: 'simba-english',
+    model: 'simba-3.0',
   }),
 });
 ```
@@ -52,5 +54,10 @@ const session = new AgentSession({
 | `baseUrl` | SDK default | Override the API base URL. |
 | `client` | — | Pass a preconfigured `SpeechifyClient` from `@speechify/api`. |
 
-Audio is raw 16-bit little-endian PCM at 24 kHz mono. `simba-3.0` is recommended for the lowest time-to-first-audio.
+## How it works
 
+Built on the official [`@speechify/api`](https://www.npmjs.com/package/@speechify/api) SDK. `stream()` splits input into sentences and issues one `/audio/speech` request per sentence, emitting audio and aligned word-level timestamps as each sentence completes — near-streaming time-to-first-audio plus word marks (`streaming` and `alignedTranscript` capabilities). Audio is raw 16-bit little-endian PCM at 24 kHz mono; `simba-3.0` is recommended for the lowest time-to-first-audio.
+
+## Maintainers
+
+Maintained by Speechify. Published and distributed by LiveKit as part of [`livekit/agents-js`](https://github.com/livekit/agents-js).
