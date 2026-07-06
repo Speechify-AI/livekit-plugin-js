@@ -46,7 +46,8 @@
     "clean": "rm -rf dist",
     "clean:build": "pnpm clean && pnpm build",
     "lint": "eslint -f unix \"src/**/*.{ts,js}\"",
-    "test": "vitest run"
+    "test": "vitest run",
+    "example": "tsx scripts/synthesize.ts"
   },
   "dependencies": {
     "@speechify/api": "^2.0.0"
@@ -57,7 +58,8 @@
     "@types/node": "^18.0.0",
     "tsup": "^8.3.5",
     "typescript": "^5.0.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "tsx": "^4.19.0"
   },
   "peerDependencies": {
     "@livekit/agents": "^1.2.0",

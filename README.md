@@ -34,8 +34,8 @@ import * as speechify from '@livekit/agents-plugin-speechify';
 
 const session = new AgentSession({
   tts: new speechify.TTS({
-    voiceId: 'jack',
-    model: 'simba-3.0',
+    voiceId: 'dominic_32',
+    model: 'simba-3.2',
   }),
 });
 ```
@@ -44,8 +44,8 @@ const session = new AgentSession({
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `voiceId` | `'jack'` | Voice to synthesize with (see the Speechify `/v1/voices` endpoint). |
-| `model` | provider default | `simba-english`, `simba-multilingual`, or `simba-3.0`. |
+| `voiceId` | `'dominic_32'` | Voice to synthesize with (see the Speechify `/v1/voices` endpoint). |
+| `model` | provider default | `simba-english`, `simba-multilingual`, `simba-3.0`, or `simba-3.2` (default). |
 | `language` | provider default | BCP-47 code of the input, e.g. `en-US`. |
 | `loudnessNormalization` | provider default | Normalize output loudness. |
 | `textNormalization` | provider default | Expand numbers/dates into words before synthesis. |
@@ -56,7 +56,17 @@ const session = new AgentSession({
 
 ## How it works
 
-Built on the official [`@speechify/api`](https://www.npmjs.com/package/@speechify/api) SDK. `stream()` splits input into sentences and issues one `/audio/speech` request per sentence, emitting audio and aligned word-level timestamps as each sentence completes — near-streaming time-to-first-audio plus word marks (`streaming` and `alignedTranscript` capabilities). Audio is raw 16-bit little-endian PCM at 24 kHz mono; `simba-3.0` is recommended for the lowest time-to-first-audio.
+Built on the official [`@speechify/api`](https://www.npmjs.com/package/@speechify/api) SDK. `stream()` splits input into sentences and issues one `/audio/speech` request per sentence, emitting audio and aligned word-level timestamps as each sentence completes — near-streaming time-to-first-audio plus word marks (`streaming` and `alignedTranscript` capabilities). Audio is raw 16-bit little-endian PCM at 24 kHz mono; `simba-3.2` is the default and recommended for the lowest time-to-first-audio.
+
+## Run it locally
+
+A smoke runner exercises both synthesis paths against the live API (no LiveKit room needed), writes WAV files, and prints word timestamps + time-to-first-audio:
+
+```bash
+export SPEECHIFY_API_KEY="your-api-key"
+pnpm install
+pnpm example "Hello from Speechify."
+```
 
 ## Maintainers
 
